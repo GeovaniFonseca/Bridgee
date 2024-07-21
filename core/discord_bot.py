@@ -167,10 +167,6 @@ class DiscordBridgeBot(commands.Bot):
             traceback.print_exc()
         print("Discord > Invite processor has been stopped.")
 
-import re
-from typing import Union
-import discord
-
 def is_valid_url(url: str) -> bool:
     # Simple URL validation
     regex = re.compile(
