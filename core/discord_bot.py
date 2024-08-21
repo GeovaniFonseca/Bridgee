@@ -167,28 +167,8 @@ class DiscordBridgeBot(commands.Bot):
             traceback.print_exc()
         print("Discord > Invite processor has been stopped.")
 
-    def is_valid_url(url: str) -> bool:
-        # Simple URL validation
-        regex = re.compile(
-            r'^(?:http|ftp)s?://'  # http:// or https://
-            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'  # domain...
-            r'localhost|'  # localhost...
-            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|'  # ...or ipv4
-            r'\[?[A-F0-9]*:[A-F0-9:]+\]?)'  # ...or ipv6
-            r'(?::\d+)?'  # optional port
-            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-        return re.match(regex, url) is not None
-
     async def _send_message(self, *args, **kwargs) -> Union[discord.Message, discord.WebhookMessage, None]:
         kwargs["allowed_mentions"] = discord.AllowedMentions.none()
-        embeds = kwargs.get("embeds", [])
-        
-        for embed in embeds:
-            if hasattr(embed, 'author') and hasattr(embed.author, 'icon_url'):
-                if not is_valid_url(embed.author.icon_url):
-                    print(f"Discord > Invalid icon_url: {embed.author.icon_url}")
-                    embed.author.icon_url = ""  # or set to a default valid URL
-
         if kwargs.pop("officer", False):
             if self.officer_webhook:
                 kwargs["wait"] = True
@@ -225,31 +205,30 @@ class DiscordBridgeBot(commands.Bot):
                     print(f"Discord > Failed to send message to channel {channel}: {e}")
                     await self.send_debug_message(traceback.format_exc())
 
+    async def send_message(self, *args, **kwargs) -> Union[discord.Message, discord.WebhookMessage, None]:
+        retry = kwargs.pop("retry", True)
+        try:
+            return await self._send_message(*args, **kwargs)
+        except aiohttp.ClientError as e:
+            if retry:
+                self.init_webhooks()
+                return await self.send_message(*args, **kwargs, retry=False)
 
-        async def send_message(self, *args, **kwargs) -> Union[discord.Message, discord.WebhookMessage, None]:
-            retry = kwargs.pop("retry", True)
-            try:
-                return await self._send_message(*args, **kwargs)
-            except aiohttp.ClientError as e:
-                if retry:
-                    self.init_webhooks()
-                    return await self.send_message(*args, **kwargs, retry=False)
-
-        async def send_user_message(
-            self, username, message, *, officer: bool = False
-        ) -> Union[discord.Message, discord.WebhookMessage, None]:
-            await self.send_debug_message("Sending user message")
-            if self.webhook:
-                return await self.send_message(
-                    username=username,
-                    avatar_url="https://www.mc-heads.net/avatar/" + username,
-                    content=message,
-                    officer=officer,
-                )
-            else:
-                embed = Embed(description=message, colour=0x1ABC9C, timestamp=discord.utils.utcnow())
-                embed.set_author(name=username, icon_url="https://www.mc-heads.net/avatar/" + username)
-                return await self.send_message(embed=embed, officer=officer)
+    async def send_user_message(
+        self, username, message, *, officer: bool = False
+    ) -> Union[discord.Message, discord.WebhookMessage, None]:
+        await self.send_debug_message("Sending user message")
+        if self.webhook:
+            return await self.send_message(
+                username=username,
+                avatar_url="https://www.mc-heads.net/avatar/" + username,
+                content=message,
+                officer=officer,
+            )
+        else:
+            embed = Embed(description=message, colour=0x1ABC9C, timestamp=discord.utils.utcnow())
+            embed.set_author(name=username, icon_url="https://www.mc-heads.net/avatar/" + username)
+            return await self.send_message(embed=embed, officer=officer)
 
     async def send_minecraft_user_message(self, username, message: discord.Message, *, officer: bool = False):
         content = message.content
@@ -333,12 +312,12 @@ class DiscordBridgeBot(commands.Bot):
                         if "]:" in message:
                             memberusername = message.split()[1]
                         else:
-                            memberusername = message.split()[1][:-1] + "]"
+                            memberusername = message.split()[1][:-1]
                     else:
                         if "]:" in message:
                             memberusername = message.split()[0]
                         else:
-                            memberusername = message.split()[0][:-1] + "]"
+                            memberusername = message.split()[0][:-1]
                     if self.mineflayer_bot.bot.username in memberusername:
                         return
                     if " joined." in message:
@@ -358,10 +337,10 @@ class DiscordBridgeBot(commands.Bot):
                     else:
                         username = username.split(" ")[0]
                     username = username.strip()
-
+    
                     self.dispatch("hypixel_guild_message", username, message)
                     await self.send_user_message(username, message)
-
+    
             elif message.startswith("Officer >"):
                 channel = self.get_channel(DiscordConfig.officerChannel)
                 if channel is None:
@@ -371,28 +350,28 @@ class DiscordBridgeBot(commands.Bot):
                     return
                 message = message.replace("Guild >", "")
                 if "[" in username:
-                    username = username.split("]")[1] + "]"
+                    username = username.split("]")[1]
                 username = username.strip()
                 self.dispatch("hypixel_guild_officer_message", username, message)
                 await self.send_user_message(username, message, officer=True)
-
+    
             # Bot recieved guild invite
             elif "Click here to accept or type /guild accept " in message:
                 if "[VIP]" in message or "[VIP+]" in message or "[MVP]" in message or "[MVP+]" in message or "[MVP++]" in message:
                     playername = message.split()[2]
                 else:
                     playername = message.split()[1]
-
+    
                 embed = Embed(timestamp=discord.utils.utcnow(), colour=0x1ABC9C)
                 embed.set_author(
                     name=f"{playername} invited me to a guild!",
                     icon_url="https://www.mc-heads.net/avatar/" + playername
                 )
-
+    
                 self.dispatch("hypixel_guild_invite_recieved", playername)
                 await self.send_debug_message("Sending invite recieved message")
                 await self.send_message(embed=embed)
-
+    
             # Someone joined/left the guild
             elif " joined the guild!" in message:
                 message = message.split()
@@ -420,7 +399,7 @@ class DiscordBridgeBot(commands.Bot):
                 self.dispatch("hypixel_guild_member_leave", playername)
                 await self.send_debug_message("Sending guild member left message")
                 await self.send_message(embed=embed)
-
+    
             # Someone was promoted/demoted
             elif " was promoted from " in message:
                 message = message.split()
@@ -454,7 +433,7 @@ class DiscordBridgeBot(commands.Bot):
                 self.dispatch("hypixel_guild_member_demote", playername, from_rank, to_rank)
                 await self.send_debug_message("Sending member demoted message")
                 await self.send_message(embed=embed)
-
+    
             # Someone was kicked
             elif " was kicked from the guild!" in message:
                 message = message.split()
@@ -486,7 +465,7 @@ class DiscordBridgeBot(commands.Bot):
                 self.dispatch("hypixel_guild_member_kick", playername)
                 await self.send_debug_message("Sending member kicked message")
                 await self.send_message(embed=embed)
-
+    
             # Join/leave notifications toggled
             elif "Disabled guild join/leave notifications!" in message:
                 embed = Embed(description="Disabled guild join/leave notifications!", colour=0x1ABC9C)
@@ -496,21 +475,21 @@ class DiscordBridgeBot(commands.Bot):
                 embed = Embed(description="Enabled guild join/leave notifications!", colour=0x1ABC9C)
                 await self.send_debug_message("Sending notification enabled message")
                 await self.send_message(embed=embed)
-
+    
             # Hypixel antispam filter
             elif "You cannot say the same message twice!" in message:
                 embed = Embed(description="You cannot say the same message twice!", colour=0x1ABC9C)
                 self.dispatch("hypixel_guild_message_send_failed", message)
                 await self.send_debug_message("Sending 'same message twice' message")
                 await self.send_message(embed=embed)
-
+    
             # Bot cannot access officer chat
             elif "You don't have access to the officer chat!" in message:
                 embed = Embed(description="You don't have access to the officer chat!", colour=0x1ABC9C)
                 self.dispatch("hypixel_guild_message_send_failed", message)
                 await self.send_debug_message("Sending no officer chat access message")
                 await self.send_message(embed=embed)
-
+    
             # Bot invited someone
             elif (
                     ("You invited" in message and "to your guild. They have 5 minutes to accept." in message)
@@ -536,7 +515,7 @@ class DiscordBridgeBot(commands.Bot):
                 self.dispatch("hypixel_guild_member_invite", playername)
                 await self.send_debug_message("Sending invite sent message")
                 await self.send_message(embed=embed)
-
+    
             # Person bot invited is in another guild
             elif " is already in another guild!" in message:
                 message = message.split()
@@ -553,7 +532,7 @@ class DiscordBridgeBot(commands.Bot):
                 self.dispatch("hypixel_guild_member_invite_failed", playername)
                 await self.send_debug_message("Sending invited player in guild message")
                 await self.send_message(embed=embed)
-
+    
             # Person bot invited is in already in the guild
             elif " is already in your guild!" in message:
                 message = message.split()
@@ -570,7 +549,7 @@ class DiscordBridgeBot(commands.Bot):
                 self.dispatch("hypixel_guild_member_invite_failed", playername)
                 await self.send_debug_message("Sending invited player in our guild message")
                 await self.send_message(embed=embed)
-
+    
             # Person bot invited has guild invites disabled (can't figure out who)
             elif "You cannot invite this player to your guild!" in message:
                 embed = Embed(timestamp=discord.utils.utcnow(), colour=0x1ABC9C)
@@ -581,7 +560,7 @@ class DiscordBridgeBot(commands.Bot):
                 self.dispatch("hypixel_guild_member_invite_failed", None)
                 await self.send_debug_message("Sending invites disabled message")
                 await self.send_message(embed=embed)
-
+    
             # Person bot invited has already been invited
             elif "You've already invited" in message and "to your guild! Wait for them to accept!" in message:
                 message = message.split()
@@ -597,7 +576,7 @@ class DiscordBridgeBot(commands.Bot):
                 self.dispatch("hypixel_guild_member_invite_failed", None)
                 await self.send_debug_message("Sending invites disabled message")
                 await self.send_message(embed=embed)
-
+    
             elif "Your guild is full!" in message:
                 embed = Embed(colour=0x1ABC9C)
                 embed.set_author(
@@ -607,7 +586,7 @@ class DiscordBridgeBot(commands.Bot):
                 self.dispatch("hypixel_guild_member_invite_failed", None)
                 await self.send_debug_message("Sending guild full message")
                 await self.send_message(embed=embed)
-
+    
             # mute stuff
             elif "has muted the guild chat" in message:
                 splitmsg = message.split()
@@ -624,7 +603,7 @@ class DiscordBridgeBot(commands.Bot):
                 self.dispatch("hypixel_guild_chat_muted", playername, duration)
                 await self.send_debug_message("Sending guild chat muted message")
                 await self.send_message(embed=embed)
-
+    
             elif "has unmuted the guild chat" in message:
                 splitmsg = message.split()
                 playername = splitmsg[0]
@@ -639,7 +618,7 @@ class DiscordBridgeBot(commands.Bot):
                 self.dispatch("hypixel_guild_chat_unmuted", playername)
                 await self.send_debug_message("Sending guild chat unmuted message")
                 await self.send_message(embed=embed)
-
+    
             # personal mutes
             elif "has muted" in message:
                 _regex = r"(?:\[[A-Z+]+\] )?([a-zA-Z0-9_]+) has muted (?:\[[A-Z+]+\] )?([a-zA-Z0-9_]+) for ([a-zA-Z0-9_]+)"
@@ -655,7 +634,7 @@ class DiscordBridgeBot(commands.Bot):
                 )
                 await self.send_debug_message("Sending member muted message")
                 await self.send_message(embed=embed, officer=True)
-
+    
             elif "has unmuted" in message:
                 _regex = r"(?:\[[A-Z+]+\] )?([a-zA-Z0-9_]+) has unmuted (?:\[[A-Z+]+\] )?([a-zA-Z0-9_]+)"
                 matches = re.match(_regex, message)
@@ -669,7 +648,7 @@ class DiscordBridgeBot(commands.Bot):
                 )
                 await self.send_debug_message("Sending member unmuted message")
                 await self.send_message(embed=embed, officer=True)
-
+    
             elif "You're currently guild muted for" in message:
                 duration_remaining = message.split()[-1][:-1]
                 self.dispatch("hypixel_guild_message_send_failed")
@@ -679,7 +658,79 @@ class DiscordBridgeBot(commands.Bot):
                 )
                 await self.send_debug_message("Sending bot is guild muted message")
                 await self.send_message(embed=embed)
-
+    
+            # mute stuff
+            elif "has muted the guild chat" in message:
+                splitmsg = message.split()
+                playername = splitmsg[0]
+                if ("[VIP]" in splitmsg or "[VIP+]" in splitmsg or
+                        "[MVP]" in splitmsg or "[MVP+]" in splitmsg or "[MVP++]" in splitmsg):
+                    playername = splitmsg[1]
+                duration = splitmsg[-1]
+                embed = Embed(colour=0x1ABC9C)
+                embed.set_author(
+                    name=f"The guild chat has been muted by {playername} for {duration}.",
+                    icon_url="https://www.mc-heads.net/avatar/" + playername
+                )
+                self.dispatch("hypixel_guild_chat_muted", playername, duration)
+                await self.debug_webhook.send("guild-muted")
+                await self.send_message(embed=embed)
+    
+            elif "has unmuted the guild chat" in message:
+                splitmsg = message.split()
+                playername = splitmsg[0]
+                if ("[VIP]" in splitmsg or "[VIP+]" in splitmsg or
+                        "[MVP]" in splitmsg or "[MVP+]" in splitmsg or "[MVP++]" in splitmsg):
+                    playername = splitmsg[1]
+                embed = Embed(colour=0x1ABC9C)
+                embed.set_author(
+                    name=f"The guild chat has been unmuted by {playername}.",
+                    icon_url="https://www.mc-heads.net/avatar/" + playername
+                )
+                self.dispatch("hypixel_guild_chat_unmuted", playername)
+                await self.debug_webhook.send("guild-unmuted")
+                await self.send_message(embed=embed)
+    
+            # personal mutes
+            elif "has muted" in message:
+                _regex = r"(?:\[[A-Z+]+\] )?([a-zA-Z0-9_]+) has muted (?:\[[A-Z+]+\] )?([a-zA-Z0-9_]+) for ([a-zA-Z0-9_]+)"
+                matches = re.match(_regex, message)
+                muter = matches.group(1)
+                muted = matches.group(2)
+                duration = matches.group(3)
+                self.dispatch("hypixel_guild_member_muted", muter, muted, duration)
+                embed = Embed(colour=0x1ABC9C)
+                embed.set_author(
+                    name=f"{muter} has muted {muted} for {duration}.",
+                    icon_url="https://www.mc-heads.net/avatar/" + muter
+                )
+                await self.debug_webhook.send("guild-member-mute")
+                await self.send_message(embed=embed, officer=True)
+    
+            elif "has unmuted" in message:
+                _regex = r"(?:\[[A-Z+]+\] )?([a-zA-Z0-9_]+) has unmuted (?:\[[A-Z+]+\] )?([a-zA-Z0-9_]+)"
+                matches = re.match(_regex, message)
+                muter = matches.group(1)
+                muted = matches.group(2)
+                self.dispatch("hypixel_guild_member_unmuted", muter, muted)
+                embed = Embed(colour=0x1ABC9C)
+                embed.set_author(
+                    name=f"{muter} has unmuted {muted}.",
+                    icon_url="https://www.mc-heads.net/avatar/" + muter
+                )
+                await self.debug_webhook.send("guild-member-unmute")
+                await self.send_message(embed=embed, officer=True)
+    
+            elif "You're currently guild muted for" in message:
+                duration_remaining = message.split()[-1][:-1]
+                self.dispatch("hypixel_guild_message_send_failed")
+                embed = Embed(colour=0x1ABC9C)
+                embed.set_author(
+                    name=f"The bot is currently guild muted for {duration_remaining}.",
+                )
+                await self.debug_webhook.send("bot-guild-muted")
+                await self.send_message(embed=embed)
+    
             # /g list command response
             elif "Total Members:" in message:
                 message = re.split("--", message)
@@ -694,7 +745,7 @@ class DiscordBridgeBot(commands.Bot):
                 embed = Embed(description=embed.replace("_", "\\_"), colour=0x1ABC9C)
                 await self.send_debug_message("Sending player list message")
                 await self.send_message(embed=embed)
-
+    
             # Everything else is sent as a normal message
             else:
                 if message.strip() == "":
