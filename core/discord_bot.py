@@ -333,12 +333,12 @@ async def _send_message(self, *args, **kwargs) -> Union[discord.Message, discord
                         if "]:" in message:
                             memberusername = message.split()[1]
                         else:
-                            memberusername = message.split()[1][:-1] + "]"  # Adicionado colchete de fechamento
+                            memberusername = message.split()[1][:-1] + "]"
                     else:
                         if "]:" in message:
                             memberusername = message.split()[0]
                         else:
-                            memberusername = message.split()[0][:-1] + "]"  # Adicionado colchete de fechamento
+                            memberusername = message.split()[0][:-1] + "]"
                     if self.mineflayer_bot.bot.username in memberusername:
                         return
                     if " joined." in message:
@@ -371,7 +371,7 @@ async def _send_message(self, *args, **kwargs) -> Union[discord.Message, discord
                     return
                 message = message.replace("Guild >", "")
                 if "[" in username:
-                    username = username.split("]")[1] + "]"  # Adicionado colchete de fechamento
+                    username = username.split("]")[1] + "]"
                 username = username.strip()
                 self.dispatch("hypixel_guild_officer_message", username, message)
                 await self.send_user_message(username, message, officer=True)
