@@ -167,89 +167,89 @@ class DiscordBridgeBot(commands.Bot):
             traceback.print_exc()
         print("Discord > Invite processor has been stopped.")
 
-def is_valid_url(url: str) -> bool:
-    # Simple URL validation
-    regex = re.compile(
-        r'^(?:http|ftp)s?://'  # http:// or https://
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'  # domain...
-        r'localhost|'  # localhost...
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|'  # ...or ipv4
-        r'\[?[A-F0-9]*:[A-F0-9:]+\]?)'  # ...or ipv6
-        r'(?::\d+)?'  # optional port
-        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-    return re.match(regex, url) is not None
+    def is_valid_url(url: str) -> bool:
+        # Simple URL validation
+        regex = re.compile(
+            r'^(?:http|ftp)s?://'  # http:// or https://
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'  # domain...
+            r'localhost|'  # localhost...
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|'  # ...or ipv4
+            r'\[?[A-F0-9]*:[A-F0-9:]+\]?)'  # ...or ipv6
+            r'(?::\d+)?'  # optional port
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+        return re.match(regex, url) is not None
 
-async def _send_message(self, *args, **kwargs) -> Union[discord.Message, discord.WebhookMessage, None]:
-    kwargs["allowed_mentions"] = discord.AllowedMentions.none()
-    embeds = kwargs.get("embeds", [])
-    
-    for embed in embeds:
-        if hasattr(embed, 'author') and hasattr(embed.author, 'icon_url'):
-            if not is_valid_url(embed.author.icon_url):
-                print(f"Discord > Invalid icon_url: {embed.author.icon_url}")
-                embed.author.icon_url = ""  # or set to a default valid URL
+    async def _send_message(self, *args, **kwargs) -> Union[discord.Message, discord.WebhookMessage, None]:
+        kwargs["allowed_mentions"] = discord.AllowedMentions.none()
+        embeds = kwargs.get("embeds", [])
+        
+        for embed in embeds:
+            if hasattr(embed, 'author') and hasattr(embed.author, 'icon_url'):
+                if not is_valid_url(embed.author.icon_url):
+                    print(f"Discord > Invalid icon_url: {embed.author.icon_url}")
+                    embed.author.icon_url = ""  # or set to a default valid URL
 
-    if kwargs.pop("officer", False):
-        if self.officer_webhook:
-            kwargs["wait"] = True
-            try:
-                return await self.officer_webhook.send(*args, **kwargs)
-            except Exception as e:
-                print(f"Discord > Failed to send message to officer webhook: {e}")
-                await self.send_debug_message(traceback.format_exc())
+        if kwargs.pop("officer", False):
+            if self.officer_webhook:
+                kwargs["wait"] = True
+                try:
+                    return await self.officer_webhook.send(*args, **kwargs)
+                except Exception as e:
+                    print(f"Discord > Failed to send message to officer webhook: {e}")
+                    await self.send_debug_message(traceback.format_exc())
+            else:
+                channel = self.get_channel(DiscordConfig.officerChannel)
+                if channel is None:
+                    return
+                try:
+                    return await channel.send(*args, **kwargs)
+                except Exception as e:
+                    print(f"Discord > Failed to send message to officer channel {channel}: {e}")
+                    await self.send_debug_message(traceback.format_exc())
         else:
-            channel = self.get_channel(DiscordConfig.officerChannel)
-            if channel is None:
-                return
-            try:
-                return await channel.send(*args, **kwargs)
-            except Exception as e:
-                print(f"Discord > Failed to send message to officer channel {channel}: {e}")
-                await self.send_debug_message(traceback.format_exc())
-    else:
-        if self.webhook:
-            kwargs["wait"] = True
-            try:
-                return await self.webhook.send(*args, **kwargs)
-            except Exception as e:
-                print(f"Discord > Failed to send message to webhook: {e}")
-                await self.send_debug_message(traceback.format_exc())
-        else:
-            channel = self.get_channel(DiscordConfig.channel)
-            if channel is None:
-                print(f"Discord > Channel {DiscordConfig.channel} not found! Please set the correct channel ID!")
-                return
-            try:
-                return await channel.send(*args, **kwargs)
-            except Exception as e:
-                print(f"Discord > Failed to send message to channel {channel}: {e}")
-                await self.send_debug_message(traceback.format_exc())
+            if self.webhook:
+                kwargs["wait"] = True
+                try:
+                    return await self.webhook.send(*args, **kwargs)
+                except Exception as e:
+                    print(f"Discord > Failed to send message to webhook: {e}")
+                    await self.send_debug_message(traceback.format_exc())
+            else:
+                channel = self.get_channel(DiscordConfig.channel)
+                if channel is None:
+                    print(f"Discord > Channel {DiscordConfig.channel} not found! Please set the correct channel ID!")
+                    return
+                try:
+                    return await channel.send(*args, **kwargs)
+                except Exception as e:
+                    print(f"Discord > Failed to send message to channel {channel}: {e}")
+                    await self.send_debug_message(traceback.format_exc())
 
 
-    async def send_message(self, *args, **kwargs) -> Union[discord.Message, discord.WebhookMessage, None]:
-        retry = kwargs.pop("retry", True)
-        try:
-            return await self._send_message(*args, **kwargs)
-        except aiohttp.ClientError as e:
-            if retry:
-                self.init_webhooks()
-                return await self.send_message(*args, **kwargs, retry=False)
+        async def send_message(self, *args, **kwargs) -> Union[discord.Message, discord.WebhookMessage, None]:
+            retry = kwargs.pop("retry", True)
+            try:
+                return await self._send_message(*args, **kwargs)
+            except aiohttp.ClientError as e:
+                if retry:
+                    self.init_webhooks()
+                    return await self.send_message(*args, **kwargs, retry=False)
 
-    async def send_user_message(
-        self, username, message, *, officer: bool = False
-    ) -> Union[discord.Message, discord.WebhookMessage, None]:
-        await self.send_debug_message("Sending user message")
-        if self.webhook:
-            return await self.send_message(
-                username=username,
-                avatar_url="https://www.mc-heads.net/avatar/" + username,
-                content=message,
-                officer=officer,
-            )
-        else:
-            embed = Embed(description=message, colour=0x1ABC9C, timestamp=discord.utils.utcnow())
-            embed.set_author(name=username, icon_url="https://www.mc-heads.net/avatar/" + username)
-            return await self.send_message(embed=embed, officer=officer)
+        async def send_user_message(
+            self, username, message, *, officer: bool = False
+        ) -> Union[discord.Message, discord.WebhookMessage, None]:
+            await self.send_debug_message("Sending user message")
+            if self.webhook:
+                return await self.send_message(
+                    username=username,
+                    avatar_url="https://www.mc-heads.net/avatar/" + username,
+                    content=message,
+                    officer=officer,
+                )
+            else:
+                embed = Embed(description=message, colour=0x1ABC9C, timestamp=discord.utils.utcnow())
+                embed.set_author(name=username, icon_url="https://www.mc-heads.net/avatar/" + username)
+                return await self.send_message(embed=embed, officer=officer)
 
     async def send_minecraft_user_message(self, username, message: discord.Message, *, officer: bool = False):
         content = message.content
