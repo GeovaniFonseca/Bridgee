@@ -218,16 +218,16 @@ class DiscordBridgeBot(commands.Bot):
         self, username, message, *, officer: bool = False
     ) -> Union[discord.Message, discord.WebhookMessage, None]:
         await self.send_debug_message("Sending user message")
+
         if self.webhook:
             return await self.send_message(
                 username=username,
-                avatar_url="https://www.mc-heads.net/avatar/" + username,
                 content=message,
                 officer=officer,
             )
         else:
             embed = Embed(description=message, colour=0x1ABC9C, timestamp=discord.utils.utcnow())
-            embed.set_author(name=username, icon_url="https://www.mc-heads.net/avatar/" + username)
+            embed.set_author(name=username)
             return await self.send_message(embed=embed, officer=officer)
 
     async def send_minecraft_user_message(self, username, message: discord.Message, *, officer: bool = False):
@@ -287,7 +287,9 @@ class DiscordBridgeBot(commands.Bot):
             content = f"/gc {username}: {content}"
         if len(content) > 256:
             content = content[:253] + "..."
+
         await self.mineflayer_bot.chat(content)
+
 
     # custom client events:
     # hypixel_guild_message
