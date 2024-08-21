@@ -1,4 +1,0 @@
-discord.py
-redis
-javascript
-requests
