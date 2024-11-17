@@ -11,6 +11,7 @@ from discord import Embed
 from discord.ext import commands
 
 from core.config import DiscordConfig, RedisConfig
+from core.message_parsers import GuildMessageParser
 from core.minecraft_bot import MinecraftBotManager
 from core.redis_handler import RedisManager
 
@@ -22,6 +23,7 @@ mention_regex = re.compile(r"<@!?(\d+)>")
 role_mention_regex = re.compile(r"<@&(\d+)>")
 channel_mention_regex = re.compile(r"<#(\d+)>")
 slash_mention_regex = re.compile(r"</([\w\- ]+):\d+>")
+link_regex = re.compile(r"\S+\.\S+")
 
 
 def emoji_repl(match):
@@ -50,6 +52,7 @@ class DiscordBridgeBot(commands.Bot):
         self.webhook: discord.Webhook | None = None
         self.officer_webhook: discord.Webhook | None = None
         self.debug_webhook: discord.Webhook | None = None
+        self.name = None
 
     def get_intents(self) -> discord.Intents:
         """Returns a mutable intents class for the bot."""
@@ -169,41 +172,35 @@ class DiscordBridgeBot(commands.Bot):
 
     async def _send_message(self, *args, **kwargs) -> Union[discord.Message, discord.WebhookMessage, None]:
         kwargs["allowed_mentions"] = discord.AllowedMentions.none()
-        if kwargs.pop("officer", False):
-            if self.officer_webhook:
-                kwargs["wait"] = True
-                try:
-                    return await self.officer_webhook.send(*args, **kwargs)
-                except Exception as e:
-                    print(f"Discord > Failed to send message to officer webhook: {e}")
-                    await self.send_debug_message(traceback.format_exc())
-            else:
-                channel = self.get_channel(DiscordConfig.officerChannel)
-                if channel is None:
-                    return
-                try:
-                    return await channel.send(*args, **kwargs)
-                except Exception as e:
-                    print(f"Discord > Failed to send message to officer channel {channel}: {e}")
-                    await self.send_debug_message(traceback.format_exc())
+        if not args and 'content' not in kwargs and 'embed' not in kwargs:
+            print("Discord > Warning: Attempted to send an empty message")
+            return None
+
+        is_officer = kwargs.pop("officer", False)
+        webhook = self.officer_webhook if is_officer else self.webhook
+           
+        if webhook:
+            kwargs["wait"] = True
+            try:
+                if not 'username' in kwargs.keys():
+                    self.name = DiscordConfig.serverName if not DiscordConfig.serverName == "" else "Bridge Bot"
+                    return await webhook.send(username = self.name, *args, **kwargs)
+                else:
+                    return await webhook.send(*args, **kwargs)
+            except Exception as e:
+                print(f"Discord > Failed to send message to {'officer ' if is_officer else ''}webhook: {e}")
+                await self.send_debug_message(traceback.format_exc())
         else:
-            if self.webhook:
-                kwargs["wait"] = True
-                try:
-                    return await self.webhook.send(*args, **kwargs)
-                except Exception as e:
-                    print(f"Discord > Failed to send message to webhook: {e}")
-                    await self.send_debug_message(traceback.format_exc())
-            else:
-                channel = self.get_channel(DiscordConfig.channel)
-                if channel is None:
-                    print(f"Discord > Channel {DiscordConfig.channel} not found! Please set the correct channel ID!")
-                    return
-                try:
-                    return await channel.send(*args, **kwargs)
-                except Exception as e:
-                    print(f"Discord > Failed to send message to channel {channel}: {e}")
-                    await self.send_debug_message(traceback.format_exc())
+            channel_id = DiscordConfig.officerChannel if is_officer else DiscordConfig.channel
+            channel = self.get_channel(channel_id)
+            if channel is None:
+                print(f"Discord > Channel {channel_id} not found! Please set the correct channel ID!")
+                return None
+            try:
+                return await channel.send(*args, **kwargs)
+            except Exception as e:
+                print(f"Discord > Failed to send message to {'officer ' if is_officer else ''}channel {channel}: {e}")
+                await self.send_debug_message(traceback.format_exc())
 
     async def send_message(self, *args, **kwargs) -> Union[discord.Message, discord.WebhookMessage, None]:
         retry = kwargs.pop("retry", True)
@@ -213,25 +210,36 @@ class DiscordBridgeBot(commands.Bot):
             if retry:
                 self.init_webhooks()
                 return await self.send_message(*args, **kwargs, retry=False)
-
+                
     async def send_user_message(
         self, username, message, *, officer: bool = False
     ) -> Union[discord.Message, discord.WebhookMessage, None]:
         await self.send_debug_message("Sending user message")
-
         if self.webhook:
             return await self.send_message(
                 username=username,
+                # avatar_url="https://www.mc-heads.net/avatar/" + username,
                 content=message,
                 officer=officer,
             )
         else:
             embed = Embed(description=message, colour=0x1ABC9C, timestamp=discord.utils.utcnow())
-            embed.set_author(name=username)
+            embed.set_author(name=username, icon_url="https://www.mc-heads.net/avatar/" + username)
             return await self.send_message(embed=embed, officer=officer)
 
     async def send_minecraft_user_message(self, username, message: discord.Message, *, officer: bool = False):
         content = message.content
+        if content.strip() == "":
+            # Send number of attachments if no message content
+            if message.attachments:
+                count = len(message.attachments)
+                await self.mineflayer_bot.chat(f"/gc {username} attached {'a' if count == 1 else count} file{'s' if count > 1 else ''}")
+            else:
+                try:
+                    await message.add_reaction("❌")
+                except discord.HTTPException:
+                    pass
+            return
         # replace emojis
         content = emoji_regex.sub(emoji_repl, content)
         # replace member mentions
@@ -275,21 +283,39 @@ class DiscordBridgeBot(commands.Bot):
                 content = content.replace(f"<#{mention}>", f"#{channel.name}")
             else:
                 content = content.replace(f"<#{mention}>", f"#unknown-channel")
-        if content.strip() == "":
-            try:
-                await message.add_reaction("❌")
-            except discord.HTTPException:
-                pass
-            return
+        # filter links
+        content = link_regex.sub("<link>", content)
+        if message.reference:
+            if message.reference.cached_message:
+                reply = message.reference.cached_message
+            else:
+                reply = None
+                try:
+                    reply = await message.channel.fetch_message(message.reference.message_id)
+                except discord.HTTPException:
+                    pass
+            if reply:
+                if reply.author != self.user:
+                    reply_to = "@" + reply.author.name
+                else:
+                    reply_to = None
+                    # if there is no content it was a system message
+                    if reply.embeds[0].description:
+                        try:
+                            reply_to = reply.embeds[0].author.name
+                        except AttributeError:  # still wasn't a valid user message
+                            pass
+                if reply_to:
+                    username += f" replied to {reply_to}"
         if officer:
             content = f"/oc {username}: {content}"
         else:
             content = f"/gc {username}: {content}"
+        content = content.encode("utf-8").decode("unicode-escape")
+        content = content.encode("ascii", "ignore").decode("ascii")
         if len(content) > 256:
             content = content[:253] + "..."
-
         await self.mineflayer_bot.chat(content)
-
 
     # custom client events:
     # hypixel_guild_message
@@ -498,7 +524,7 @@ class DiscordBridgeBot(commands.Bot):
                     or ("You sent an offline invite to" in message)
             ):
                 message = message.split()
-                if "You sent an offline invite to" in message:
+                if message[2] == "an" and message[3] == "offline":
                     if "[VIP]" in message or "[VIP+]" in message or "[MVP]" in message or "[MVP+]" in message or "[MVP++]" in message:
                         playername = message[7]
                     else:
@@ -732,28 +758,22 @@ class DiscordBridgeBot(commands.Bot):
                 )
                 await self.debug_webhook.send("bot-guild-muted")
                 await self.send_message(embed=embed)
-    
-            # /g list command response
-            elif "Total Members:" in message:
-                message = re.split("--", message)
-                embed = ""
-                length = len(message)
-                for i in range(length):
-                    if i == 0:
-                        pass
-                    elif i % 2 == 0:
-                        ii = i - 1
-                        embed += "**" + message[ii] + "** " + message[i]
-                embed = Embed(description=embed.replace("_", "\\_"), colour=0x1ABC9C)
-                await self.send_debug_message("Sending player list message")
-                await self.send_message(embed=embed)
-    
-            # Everything else is sent as a normal message
+
             else:
                 if message.strip() == "":
                     return
-                await self.send_debug_message(f"Normal message: `{ message }`")
-                embed = Embed(colour=0x1ABC9C).set_author(name=message)
-                await self.send_message(embed=embed)
+                parser = GuildMessageParser(message)
+                embeds = parser.parse()
+                if isinstance(embeds, list):
+                    await self.send_debug_message("Sending guild command response")
+                    for embed in embeds:
+                        await self.send_message(embed=embed)
+                elif isinstance(embeds, dict):
+                    await self.send_debug_message("Sending guild command response")
+                    await self.send_message(embed=embeds["embed"], file=embeds["file"])
+                else:
+                    await self.send_debug_message(f"Normal message: `{message}`")
+                    embed = discord.Embed(colour=0x1ABC9C).set_author(name=message)
+                    await self.send_message(embed=embed)
         except Exception as e:
             await self.on_error("minecraft_message", message, e)

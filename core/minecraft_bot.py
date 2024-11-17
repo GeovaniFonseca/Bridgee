@@ -2,6 +2,7 @@ import asyncio
 import sys
 import time
 import logging
+import os
 
 from javascript import require, On, config
 
@@ -18,6 +19,9 @@ class MinecraftBotManager:
         self.message_buffer = []
         self.auto_restart = True
         self._online = False
+    
+    def is_online(self):
+        return self._online
 
     async def chat(self, message):
         await self.client.loop.run_in_executor(None, self.bot.chat, message)
@@ -36,6 +40,10 @@ class MinecraftBotManager:
 
     def send_to_discord(self, message):
         asyncio.run_coroutine_threadsafe(self.client.send_discord_message(message), self.client.loop)
+
+    async def reconnect(self):
+        await asyncio.sleep(3)
+        asyncio.run_coroutine_threadsafe(self.discord_bot.close(), self.client.loop)
 
     def oncommands(self):
         message_buffer = []
@@ -57,12 +65,15 @@ class MinecraftBotManager:
             self.client.dispatch("minecraft_disconnected")
             self._online = False
             if self.auto_restart:
-                time.sleep(120)
-                if self.auto_restart:
-                    print("Mineflayer > Restarting...")
-                    new_bot = self.createbot(self.client)
-                    self.client.mineflayer_bot = new_bot
-                    return
+                print("Mineflayer > Restarting...")
+                # new_bot = self.createbot(self.client)
+                # self.client.mineflayer_bot = new_bot
+                # return
+                self.send_to_discord("Updating the bot...")
+                os.system("git pull")
+                
+                asyncio.run(self.reconnect())
+
             for state, handler, thread in config.event_loop.threads:
                 thread.terminate()
             config.event_loop.threads = []
@@ -105,7 +116,7 @@ class MinecraftBotManager:
                         self.send_to_discord(message)
 
                     # Online Command
-                    if message.startswith("Guild Name: "):
+                    if message.startswith("Guild Name: ") or "Top Guild Experience" in message or message.startswith("Created: "):
                         message_buffer.clear()
                         self.wait_response = True
                     if message == "-----------------------------------------------------" and self.wait_response:
@@ -115,6 +126,7 @@ class MinecraftBotManager:
                     if self.wait_response is True:
                         message_buffer.append(message)
 
+
                     if "Unknown command" in message:
                         self.send_to_discord(message)
                     if "Click here to accept or type /guild accept " in message:
@@ -122,6 +134,7 @@ class MinecraftBotManager:
                         self.send_minecraft_message(None, message, "invite")
                     elif " is already in another guild!" in message or \
                             ("You invited" in message and "to your guild. They have 5 minutes to accept." in message) or \
+                            "You sent an offline invite to " in message or \
                             " joined the guild!" in message or \
                             " left the guild!" in message or \
                             " was promoted from " in message or \
