@@ -224,7 +224,7 @@ class DiscordBridgeBot(commands.Bot):
             )
         else:
             embed = Embed(description=message, colour=0x1ABC9C, timestamp=discord.utils.utcnow())
-            embed.set_author(name=username, icon_url="https://www.mc-heads.net/avatar/" + username)
+            embed.set_author(name=username, icon_url=username)
             return await self.send_message(embed=embed, officer=officer)
 
     async def send_minecraft_user_message(self, username, message: discord.Message, *, officer: bool = False):
