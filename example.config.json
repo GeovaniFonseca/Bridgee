@@ -1,0 +1,35 @@
+{
+    "server": {
+        "host": "mc.hypixel.net",
+        "port": 25565
+    },
+    "account": {
+        "email": ""
+    },
+    "discord": {
+        "token": "",
+        "channel": "",
+        "officerChannel": "",
+        "commandRole": "",
+        "overrideRole": "",
+        "ownerId": "",
+        "prefix": "!",
+        "webhookURL": "",
+        "officerWebhookURL": "",
+        "debugWebhookURL": "",
+        "serverName": ""
+    },
+    "redis": {
+        "host": "",
+        "port": 6379,
+        "password": "",
+        "clientName": "",
+        "recieveChannel": "",
+        "sendChannel": ""
+    },
+    "settings": {
+        "autoaccept": false,
+        "dateLimit": 30,
+        "extensions": []
+    }
+}

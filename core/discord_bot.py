@@ -218,13 +218,13 @@ class DiscordBridgeBot(commands.Bot):
         if self.webhook:
             return await self.send_message(
                 username=username,
-                # avatar_url="https://www.mc-heads.net/avatar/" + username,
+                avatar_url="https://www.mc-heads.net/avatar/" + username,
                 content=message,
                 officer=officer,
             )
         else:
             embed = Embed(description=message, colour=0x1ABC9C, timestamp=discord.utils.utcnow())
-            embed.set_author(name=username, icon_url=username)
+            embed.set_author(name=username, icon_url="https://www.mc-heads.net/avatar/" + username)
             return await self.send_message(embed=embed, officer=officer)
 
     async def send_minecraft_user_message(self, username, message: discord.Message, *, officer: bool = False):
@@ -330,6 +330,7 @@ class DiscordBridgeBot(commands.Bot):
     # hypixel_guild_member_invite
     # hypixel_guild_member_invite_failed
     # hypixel_guild_message_send_failed
+    ##############################
     async def send_discord_message(self, message):
         try:
             if "Unknown command" in message:
@@ -350,10 +351,10 @@ class DiscordBridgeBot(commands.Bot):
                         return
                     if " joined." in message:
                         embed = Embed(timestamp=discord.utils.utcnow(), colour=0x56F98A)
-                        embed.set_author(name=message, icon_url="https://www.mc-heads.net/avatar/" + memberusername)
+                        embed.set_author(name=message)  # Removido o icon_url
                     else:
                         embed = Embed(timestamp=discord.utils.utcnow(), colour=0xFF6347)
-                        embed.set_author(name=message, icon_url="https://www.mc-heads.net/avatar/" + memberusername)
+                        embed.set_author(name=message)  # Removido o icon_url
                     await self.send_debug_message("Sending player joined message")
                     await self.send_message(embed=embed)
                 else:
@@ -365,10 +366,10 @@ class DiscordBridgeBot(commands.Bot):
                     else:
                         username = username.split(" ")[0]
                     username = username.strip()
-    
+
                     self.dispatch("hypixel_guild_message", username, message)
                     await self.send_user_message(username, message)
-    
+
             elif message.startswith("Officer >"):
                 channel = self.get_channel(DiscordConfig.officerChannel)
                 if channel is None:
@@ -381,7 +382,10 @@ class DiscordBridgeBot(commands.Bot):
                     username = username.split("]")[1]
                 username = username.strip()
                 self.dispatch("hypixel_guild_officer_message", username, message)
+                
+                # Chamando send_user_message sem avatar
                 await self.send_user_message(username, message, officer=True)
+##############################
     
             # Bot recieved guild invite
             elif "Click here to accept or type /guild accept " in message:

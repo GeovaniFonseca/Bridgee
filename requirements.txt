@@ -1,0 +1,6 @@
+discord.py
+redis
+javascript
+requests
+pandas
+matplotlib
