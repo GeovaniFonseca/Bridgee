@@ -225,7 +225,7 @@ class DiscordBridgeBot(commands.Bot):
         else:
             embed = Embed(description=message, colour=0x1ABC9C, timestamp=discord.utils.utcnow())
             print("Debug: Nenhum icon_url será definido no embed.")  # Log adicional
-            embed.set_author(name=message)  # icon_url removido
+            embed.set_author(name=username)  # icon_url removido
             return await self.send_message(embed=embed, officer=officer)
 
     async def send_minecraft_user_message(self, username, message: discord.Message, *, officer: bool = False):
